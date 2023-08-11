@@ -33,6 +33,8 @@ jobs:
               - jettech/kube-webhook-certgen
               - kubernetesui/dashboard
               - kubernetesui/metrics-scraper
+              - flannel/flannel
+              - flannel/flannel-cni-plugin
         sync-policy:
           from: dockerhub
           to: aliyuncs
@@ -44,6 +46,8 @@ jobs:
               new: kubeadm-ha/jettech_
             - old: kubernetesui/
               new: kubeadm-ha/kubernetesui_
+            - old: flannel/
+              new: kubeadm-ha/flannel_
           filters:
             - ^[Vv]?\d+\.\d+(\.\d+)?(-\d+)?$
         EOF
@@ -60,9 +64,9 @@ jobs:
           dockerhub:
             registry: https://registry-1.docker.io
             repositories:
-              - library/nginx:1.19-alpine
+              - library/nginx:1.23-alpine
               - library/haproxy:2.3-alpine
-              - library/traefik:2.4.8
+              - library/traefik:v2.10.4
               - openresty/openresty:1.19.3.1-alpine
               - envoyproxy/envoy:v1.16.2
               - osixia/keepalived:2.0.20
@@ -109,10 +113,10 @@ jobs:
           quay:
             registry: https://quay.io
             repositories:
-              - coreos/flannel
               - jetstack/cert-manager-cainjector
               - jetstack/cert-manager-webhook
               - jetstack/cert-manager-controller
+              - jetstack/cert-manager-acmesolver
         sync-policy:
           from: quay
           to: aliyuncs
@@ -160,6 +164,7 @@ jobs:
               - coredns
               - coredns/coredns
               - ingress-nginx/controller
+              - ingress-nginx/kube-webhook-certgen
               - metrics-server/metrics-server
         sync-policy:
           from: gcr
@@ -172,6 +177,83 @@ jobs:
               new: kubeadm-ha/metrics-server_
             - old: coredns/
               new: kubeadm-ha/
+            - new: kubeadm-ha
+          filters:
+            - ^[Vv]?\d+\.\d+(\.\d+)?(-\d+)?$
+        EOF
+        registry-manager sync -c config.yaml
+
+  k8s-to-aliyun2:
+    runs-on: ubuntu-20.04
+    container: setzero/registry-manager
+    env:
+      TO_USERNAME: ${{ secrets.TO_USERNAME }}
+      TO_PASSWORD: ${{ secrets.TO_PASSWORD }}
+    steps:
+    - name: k8s to Aliyun
+      run: |
+        cat << EOF >config.yaml
+        registries:
+          aliyuncs:
+            registry: https://registry.aliyuncs.com
+            username: ${{ secrets.TO_USERNAME }}
+            password: ${{ secrets.TO_PASSWORD }}
+          k8s:
+            registry: https://registry.k8s.io
+            repositories:
+              - ingress-nginx/kube-webhook-certgen
+        sync-policy:
+          from: k8s
+          to: aliyuncs
+          dry-run: false
+          replace:
+            - old: ingress-nginx/
+              new: kubeadm-ha/ingress-nginx_
+          filters:
+            - ^[Vv]
+        EOF
+        registry-manager sync -c config.yaml
+
+  k8s-to-aliyun:
+    runs-on: ubuntu-20.04
+    container: setzero/registry-manager
+    env:
+      TO_USERNAME: ${{ secrets.TO_USERNAME }}
+      TO_PASSWORD: ${{ secrets.TO_PASSWORD }}
+    steps:
+    - name: k8s to Aliyun
+      run: |
+        cat << EOF >config.yaml
+        registries:
+          aliyuncs:
+            registry: https://registry.aliyuncs.com
+            username: ${{ secrets.TO_USERNAME }}
+            password: ${{ secrets.TO_PASSWORD }}
+          k8s:
+            registry: https://registry.k8s.io
+            repositories:
+              - kube-apiserver
+              - kube-controller-manager
+              - kube-scheduler
+              - kube-proxy
+              - pause
+              - etcd
+              - coredns
+              - coredns/coredns
+              - ingress-nginx/controller
+              - ingress-nginx/kube-webhook-certgen
+              - metrics-server/metrics-server
+        sync-policy:
+          from: k8s
+          to: aliyuncs
+          dry-run: false
+          replace:
+            - old: coredns/
+              new: kubeadm-ha/
+            - old: ingress-nginx/
+              new: kubeadm-ha/ingress-nginx_
+            - old: metrics-server/
+              new: kubeadm-ha/metrics-server_
             - new: kubeadm-ha
           filters:
             - ^[Vv]?\d+\.\d+(\.\d+)?(-\d+)?$

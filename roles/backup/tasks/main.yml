@@ -1,12 +1,12 @@
 - name: 判断 Docker 是否早已安装
   shell: >
-    systemctl status docker | grep running || echo "not running"
+    systemctl is-active docker || echo "not running"
   register: docker_already_running
 
 - name: 设置 container_manager_detected 变量
   set_fact:
     container_manager_detected: >-
-      {%- if "active" in docker_already_running.stdout -%}
+      {%- if docker_already_running.stdout == "active" -%}
       docker
       {%- else -%}
       containerd
@@ -17,6 +17,15 @@
     file: 
       name: /etc/kubernetes/backup/etcd
       state: directory
+
+  - name: 第一个 etcd 节点尝试拉取 etcd 镜像
+    shell: >
+      {% if container_manager_detected == 'containerd' %}
+      crictl pull {{ etcd_image }}
+      {% elif container_manager_detected == 'docker' %}
+      docker pull {{ etcd_image }}
+      {% endif %}
+    ignore_errors: true
 
   - name: 第一个 etcd 节点备份 etcd 数据库
     shell: >

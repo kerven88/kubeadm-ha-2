@@ -1,22 +1,12 @@
-apiVersion: kubeadm.k8s.io/v1beta1
-kind: JoinConfiguration
-discovery:
-  bootstrapToken:
-    apiServerEndpoint: "{{ kube_apiserver_ip | trim }}:{{ lb_kube_apiserver_port | trim }}"
-    token: {{ kubeadm_token }}
-    unsafeSkipCAVerification: true
-  timeout: 5m0s
-  tlsBootstrapToken: {{ kubeadm_token }}
-controlPlane:
-  localAPIEndpoint:
-    advertiseAddress: {{ current_host_ip }}
-    bindPort: 6443
+apiVersion: kubeadm.k8s.io/v1beta3
+kind: InitConfiguration
+localAPIEndpoint:
+  advertiseAddress: {{ current_host_ip }}
+  bindPort: 6443
 nodeRegistration:
   kubeletExtraArgs:
-    network-plugin: cni
     root-dir: {{ kubelet_root_dir }}
     hostname-override: {{ inventory_hostname }}
-    pod-infra-container-image: {{ pod_infra_container_image }}
   criSocket: {{ cri_socket }}
   name: {{ inventory_hostname }}
 {% if inventory_hostname in (groups['kube-master'] + groups['new-master']) and inventory_hostname not in (groups['kube-worker'] + groups['new-worker']) %}
@@ -26,13 +16,23 @@ nodeRegistration:
 {% else %}
   taints: []
 {% endif %}
+bootstrapTokens:
+- groups:
+  - system:bootstrappers:kubeadm:default-node-token
+  token: {{ kubeadm_token }}
+  ttl: 0s
+  usages:
+  - signing
+  - authentication
 ---
-apiVersion: kubeadm.k8s.io/v1beta1
+apiVersion: kubeadm.k8s.io/v1beta3
 kind: ClusterConfiguration
-kubernetesVersion: v{{ kube_version }}
+kubernetesVersion: {{ kube_version }}
 clusterName: kubernetes
 controlPlaneEndpoint: "{{ kube_apiserver_ip | trim }}:{{ lb_kube_apiserver_port | trim }}"
 certificatesDir: /etc/kubernetes/pki
+dns:
+  imageRepository: "{{ kube_image_repository }}"
 etcd:
   external:
     endpoints:
@@ -54,7 +54,6 @@ networking:
 apiServer:
   extraArgs:
     allow-privileged: "true"
-    apiserver-count: "{{ groups['kube-master']|length + groups['new-master']|length }}"
 {% if kubernetes_audit %}
     audit-log-path: /var/log/audit/kube-apiserver-audit.log
     audit-log-maxage: "{{ audit_log_maxage }}"
@@ -138,7 +137,7 @@ apiServer:
 controllerManager:
   extraArgs:
     bind-address: 127.0.0.1
-    experimental-cluster-signing-duration: "{{kube_certs_expired|int * 24}}h0m0s"
+    cluster-signing-duration: "{{kube_certs_expired|int * 24}}h0m0s"
     feature-gates: "RotateKubeletServerCertificate=true"
     profiling: "false"
     node-monitor-grace-period: {{ kube_controller_node_monitor_grace_period }}
@@ -253,6 +252,7 @@ makeIPTablesUtilChains: true
 maxOpenFiles: 1000000
 maxPods: {{ kube_max_pods }}
 nodeLeaseDurationSeconds: 40
+nodeStatusReportFrequency: 1m0s
 nodeStatusUpdateFrequency: 10s
 oomScoreAdj: -999
 podPidsLimit: -1
@@ -278,3 +278,44 @@ tlsCipherSuites:
 - TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256
 - TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384
 volumeStatsAggPeriod: 1m0s
+---
+apiVersion: kubeproxy.config.k8s.io/v1alpha1
+kind: KubeProxyConfiguration
+bindAddress: 0.0.0.0
+clientConnection:
+  acceptContentTypes: ""
+  burst: 10
+  contentType: application/vnd.kubernetes.protobuf
+  kubeconfig: /var/lib/kube-proxy/kubeconfig.conf
+  qps: 5
+clusterCIDR: {{ kube_pod_subnet }}
+configSyncPeriod: 15m0s
+conntrack:
+  maxPerCore: 32768
+  min: 131072
+  tcpCloseWaitTimeout: 1h0m0s
+  tcpEstablishedTimeout: 24h0m0s
+enableProfiling: false
+healthzBindAddress: 0.0.0.0:10256
+hostnameOverride: ""
+iptables:
+  masqueradeAll: false
+  masqueradeBit: 14
+  minSyncPeriod: 0s
+  syncPeriod: 30s
+ipvs:
+  excludeCIDRs: null
+  minSyncPeriod: 0s
+  scheduler: ""
+  strictARP: false
+  syncPeriod: 30s
+metricsBindAddress: 0.0.0.0:10249
+mode: {{ kube_proxy_mode }}
+nodePortAddresses: null
+oomScoreAdj: -999
+portRange: ""
+udpIdleTimeout: 250ms
+winkernel:
+  enableDSR: false
+  networkName: ""
+  sourceVip: ""
